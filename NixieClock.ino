@@ -1,6 +1,5 @@
 #include <Time.h>
 #include <IntervalTimer.h>
-#include "ClockDisplay.h"
 #include "NixieClockDisplay.h"
 #include "Encoder.h"
 #include "Button.h"
@@ -12,16 +11,24 @@
 
 #define SECS_IN_A_DAY 86400
 
-#define DATE_LED 2
+#define DATE_LED_PIN 3
+#define DISPLAY_BUTTON_PIN 2
+#define DISPLAY_LED_PIN 6
+#define SET_BUTTON_PIN 0
+#define DATE_BUTTON_PIN 1
+#define SET_ENCODER_PIN_A 4
+#define SET_ENCODER_PIN_B 5
 
 ClockDisplay * clockDisplay;
 Encoder * setEncoder;
 Button * setButton;
 Button * dateButton;
+Button * displayButton;
 IntervalTimer displayRefresh;
 
 byte inTimeMode = 1;
 byte inSetMode = 0;
+byte displayOn = 1;
 byte timeIncrement = INCREMENT_MIN;
 unsigned long lastZeroPassed = 4294967295;
 
@@ -39,12 +46,17 @@ void setup(){
   // start refresh timer
   displayRefresh.begin(updateDisplay, 1000000);
   // register encoder & buttons
-  setEncoder = EncoderManager::registerEncoder(4, 5);
-  setButton = ButtonManager::registerButton(0, 25, 0, &onSetButtonPressed);
-  dateButton = ButtonManager::registerButton(1, 50, 0, &onDateButtonPressed);
+  setEncoder = EncoderManager::registerEncoder(SET_ENCODER_PIN_A, SET_ENCODER_PIN_B);
+  setButton = ButtonManager::registerButton(SET_BUTTON_PIN, 25, 0, &onSetButtonPressed);
+  dateButton = ButtonManager::registerButton(DATE_BUTTON_PIN, 50, 0, &onDateButtonPressed);
+  displayButton = ButtonManager::registerButton(DISPLAY_BUTTON_PIN, 75, 0, &onDisplayButtonPressed);
+  
   // set up date button LED
-  pinMode(DATE_LED, OUTPUT);
+  pinMode(DATE_LED_PIN, OUTPUT);
   turnOffDateLED();
+  
+  pinMode(DISPLAY_LED_PIN, OUTPUT);
+  turnDisplayOn();
   
   if (year() == 1970)
     setTime(hour(), minute(), second(), day(), month(), 2013);
@@ -148,12 +160,22 @@ void onSetButtonPressed()
 
 void turnOnDateLED()
 {
-  analogWrite(DATE_LED, 128);
+  analogWrite(DATE_LED_PIN, 128);
 }
 
 void turnOffDateLED()
 {
-  analogWrite(DATE_LED, 0);
+  analogWrite(DATE_LED_PIN, 0);
+}
+
+void turnOnDisplayLED()
+{
+  analogWrite(DISPLAY_LED_PIN, 255);
+}
+
+void turnOffDisplayLED()
+{
+  analogWrite(DISPLAY_LED_PIN, 0);
 }
 
 void onDateButtonPressed()
@@ -174,4 +196,44 @@ void onDateButtonPressed()
     turnOffDateLED();
   }
   updateDisplay();
+}
+
+void turnDisplayOff()
+{
+  Serial.println("Display off");
+  displayOn = 0;
+  clockDisplay->turnOff();
+}
+
+void turnDisplayOn()
+{
+  Serial.println("Display on");
+  displayOn = 1;
+  clockDisplay->turnOn();
+}
+
+void onDisplayButtonPressed()
+{
+  Serial.println("Display button pressed");
+  if (inSetMode)
+    return;
+  if (displayOn)
+  {
+    turnOnDisplayLED();
+    // turn off display
+    turnDisplayOff();
+    // turn off button interrupts but display button
+    dateButton->onRelease = NULL;
+    setButton->onRelease = NULL;
+  }
+  else
+  {
+    turnOffDisplayLED();
+    // turn on display
+    turnDisplayOn();
+    // turn on interrupts
+    dateButton->onRelease = &onDateButtonPressed;
+    setButton->onRelease = &onSetButtonPressed;
+    updateDisplay();
+  }
 }
