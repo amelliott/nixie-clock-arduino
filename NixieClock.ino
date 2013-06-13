@@ -25,16 +25,29 @@ Button * setButton;
 Button * dateButton;
 Button * displayButton;
 IntervalTimer displayRefresh;
+IntervalTimer displayLEDBreathing;
 
 byte inTimeMode = 1;
 byte inSetMode = 0;
 byte displayOn = 1;
 byte timeIncrement = INCREMENT_MIN;
 unsigned long lastZeroPassed = 4294967295;
+int displayLEDBrightness = 0;
+int displayLEDIncrement = -1;  // (>0 = brighter, <0 = dimmer);
 
 time_t getTeensy3Time()
 {
   return Teensy3Clock.get();
+}
+
+void startDisplayRefresh()
+{
+  displayRefresh.begin(updateDisplay, 1000000);
+}
+
+void stopDisplayRefresh()
+{
+  displayRefresh.end();
 }
 
 void setup(){
@@ -44,7 +57,7 @@ void setup(){
   // set up display
   clockDisplay = new NixieClockDisplay(10, 11, 12, 9);
   // start refresh timer
-  displayRefresh.begin(updateDisplay, 1000000);
+  startDisplayRefresh();
   // register encoder & buttons
   setEncoder = EncoderManager::registerEncoder(SET_ENCODER_PIN_A, SET_ENCODER_PIN_B);
   setButton = ButtonManager::registerButton(SET_BUTTON_PIN, 25, 0, &onSetButtonPressed);
@@ -168,16 +181,6 @@ void turnOffDateLED()
   analogWrite(DATE_LED_PIN, 0);
 }
 
-void turnOnDisplayLED()
-{
-  analogWrite(DISPLAY_LED_PIN, 255);
-}
-
-void turnOffDisplayLED()
-{
-  analogWrite(DISPLAY_LED_PIN, 0);
-}
-
 void onDateButtonPressed()
 {
   Serial.println("Date button pressed");
@@ -198,11 +201,48 @@ void onDateButtonPressed()
   updateDisplay();
 }
 
+void updateDisplayLED()
+{
+  Serial.println(displayLEDBrightness);
+  analogWrite(DISPLAY_LED_PIN, displayLEDBrightness);
+}
+
+void startDisplayLEDBreathing()
+{
+  displayLEDBrightness = -15;
+  displayLEDIncrement = 1;
+  displayLEDBreathing.begin(updateDisplayLEDBrightness, 1000000 / 30);
+}
+
+void stopDisplayLEDBreathing()
+{
+  displayLEDBrightness = 0;
+  updateDisplayLED();
+  displayLEDBreathing.end();
+}
+
+void updateDisplayLEDBrightness()
+{
+  displayLEDBrightness += displayLEDIncrement + displayLEDIncrement*(displayLEDBrightness / 32);
+  if (displayLEDBrightness > 128)
+  {
+    displayLEDBrightness = 128;
+    displayLEDIncrement = -1;
+  }
+  else if (displayLEDBrightness < -15)
+  {
+    displayLEDBrightness = -15;
+    displayLEDIncrement = 1;
+  }
+  updateDisplayLED();
+}
+
 void turnDisplayOff()
 {
   Serial.println("Display off");
   displayOn = 0;
   clockDisplay->turnOff();
+  stopDisplayRefresh();
 }
 
 void turnDisplayOn()
@@ -210,6 +250,7 @@ void turnDisplayOn()
   Serial.println("Display on");
   displayOn = 1;
   clockDisplay->turnOn();
+  startDisplayRefresh();
 }
 
 void onDisplayButtonPressed()
@@ -219,7 +260,7 @@ void onDisplayButtonPressed()
     return;
   if (displayOn)
   {
-    turnOnDisplayLED();
+    startDisplayLEDBreathing();
     // turn off display
     turnDisplayOff();
     // turn off button interrupts but display button
@@ -228,7 +269,7 @@ void onDisplayButtonPressed()
   }
   else
   {
-    turnOffDisplayLED();
+    stopDisplayLEDBreathing();
     // turn on display
     turnDisplayOn();
     // turn on interrupts
